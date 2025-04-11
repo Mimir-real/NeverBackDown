@@ -1,14 +1,14 @@
 import os
-import hashlib
 import json
+from Crypto.Hash import SHA256
 
 def hash_file(filepath):
-    hash_tool = hashlib.sha256()
+    hash_tool = SHA256.new()
 
     with open(filepath, 'rb') as f:
         
         while True:
-            chunker = f.read(8192)
+            chunker = f.read(8_192_000)  # file read in 8MB chunks
             if not chunker:
                 break
             hash_tool.update(chunker)
