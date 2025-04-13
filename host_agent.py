@@ -62,8 +62,6 @@ def send_data_files(pair_list, directory):
     for file_path, file_hash in pair_list:
         try:
             f = open(os.path.join(directory, file_path), 'rb')
-            # The 'files' field name should match the server side (i.e., name="files")
-            # Each tuple is (field_name, file_object)
             files.append(('files', (file_hash, f)))
         except Exception as e:
             print(f"Error opening file {file_path} (hash {file_hash}): {e}")

@@ -1,6 +1,6 @@
 import re
 from os.path import basename
-from flask import Flask, request, jsonify, redirect, url_for, flash
+from flask import Flask, request, jsonify
 import boto3
 from botocore.exceptions import ClientError
 
@@ -18,11 +18,11 @@ def get_s3_hashes():
     hashes = set()
 
     paginator = s3_client.get_paginator('list_objects_v2')
-    # Paginate through all objects in the bucket (and optionally filter by prefix)
+    # Paginate through all objects in the bucket
     for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=HASHES_PREFIX):
         objects = page.get('Contents', [])
         for obj in objects:
-            # Assuming that the object key represents a hash
+
             hashes.add(basename(obj['Key']))
     return hashes
 
@@ -105,11 +105,10 @@ def upload_data_files():
                 s3_client.upload_fileobj(
                     Fileobj=file,
                     Bucket=BUCKET_NAME,
-                    Key=HASHES_PREFIX+filename  # Customize key or path in your S3 bucket as needed
+                    Key=HASHES_PREFIX+filename
                 )
                 uploaded_files.append(filename)
             except Exception as e:
-                # Append S3 upload exception error along with filename info
                 errors.append({"filename": filename, "error": str(e)})
         else:
             errors.append({"filename": file.filename, "error": "Name is not a valid hash"})
@@ -118,8 +117,6 @@ def upload_data_files():
     # If there are errors, include them in the response
     if errors:
         response["errors"] = errors
-        # Optionally, you can choose the status code based on your needs.
-        # Here, 207 (Multi-Status) can indicate a partial success, or 400 if you consider any error as failure.
         return jsonify(response), 207 if uploaded_files else 400
 
     return jsonify(response), 200
