@@ -87,6 +87,13 @@ def send_meta_file(pairs: list, backup_name: str):
     return response.status_code, response.json()
 
 
+def get_backup_versions(backup_name: str):
+    response = requests.post(SERVER_URL+'/list_backup_versions', json={'backup': backup_name})
+    if response.status_code != 200:
+        raise ValueError('bad response')
+    return response.json()
+
+
 def main():
     dir_to_back = input("Directory to backup: ").strip()
     backup_name = input('Backup name: ').strip()

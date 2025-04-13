@@ -121,6 +121,28 @@ def upload_data_files():
 
     return jsonify(response), 200
 
+@app.route('/list_backup_versions', methods=['POST'])
+def list_backup_versions():
+    if not request.is_json:
+        return jsonify({"error": "Request data must be in JSON format"}), 400
+
+    data = request.get_json()
+    backup_name = data.get('backup')
+    if not backup_name:
+        return jsonify({"error": "Backup name not provided"}), 400
+
+    backup_file = backup_name + '.json'
+
+    paginator = s3_client.get_paginator('list_object_versions')
+    version_infos = []
+    for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=backup_file):
+        for version in page.get('Versions', []):
+            print(version)
+            if version['Key'] == backup_file:
+                version_infos.append({'version_id': version['VersionId'],
+                                      'last_modified': version['LastModified']})
+    return jsonify(version_infos)
+
 
 if __name__ == '__main__':
     # Run the Flask application in debug mode
