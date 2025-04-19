@@ -4,6 +4,10 @@ import json
 import requests
 from collections import namedtuple
 from Crypto.Hash import SHA256
+from Crypto.Cipher import AES
+from Crypto.Random import get_random_bytes
+from Crypto.Util.Padding import pad, unpad
+from kms_connection import generate_data_key, decrypt_data_key
 
 SERVER_URL = 'http://localhost:5000'
 
@@ -57,17 +61,50 @@ def check_missing_hashes(hashes, backup_name) -> list | None:
         exit()
 
 
+def encrypt_data(data, output_filename):
+   
+    print("Encrypting data into '%s'.", output_filename)
+
+    encrypted_key, plaintext_key = generate_data_key()
+
+    # Create a new AES cipher object in CBC mode with a random IV
+    iv = get_random_bytes(AES.block_size)
+    cipher = AES.new(plaintext_key, AES.MODE_CBC, iv)
+
+    # Pad the data to a multiple of AES block size (16 bytes)
+    padded_data = pad(data, AES.block_size)
+
+    # Encrypt the data
+    ciphertext = cipher.encrypt(padded_data)
+
+    del plaintext_key
+
+    print("Encryption completed successfully.")
+
+    return iv + ciphertext, encrypted_key
+
+
 def send_data_files(pair_list, directory):
     files = []
+    files_keys = []
     for file_path, file_hash in pair_list:
         try:
-            f = open(os.path.join(directory, file_path), 'rb')
-            files.append(('files', (file_hash, f)))
+            full_path = os.path.join(directory, file_path)
+            with open(full_path, 'rb') as f:
+                plaintext = f.read()
+
+            encrypted_data, encrypted_key = encrypt_data(plaintext, file_path)
+
+            files.append(('files', (file_hash, io.BytesIO(encrypted_data))))
+
+            key_filename = file_hash + '.key'
+            files_keys.append(('files', (key_filename, io.BytesIO(encrypted_key))))
         except Exception as e:
             print(f"Error opening file {file_path} (hash {file_hash}): {e}")
 
     try:
         response = requests.post(SERVER_URL+'/upload_data_files', files=files)
+        response = requests.post(SERVER_URL+'/upload_key_files', files=files_keys)
         # Close all file objects after the request.
         for _, file_info in files:
             file_info[1].close()
@@ -78,7 +115,6 @@ def send_data_files(pair_list, directory):
     except requests.exceptions.RequestException as err:
         print(f"HTTP Request failed: {err}")
         return None
-
 
 def send_meta_file(pairs: list, backup_name: str):
     file_obj = io.StringIO(json.dumps(pairs, indent=4))

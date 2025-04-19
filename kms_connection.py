@@ -1,7 +1,7 @@
 import boto3
 import base64
 
-kms_client = boto3.client('kms', region_name='us-east-1')
+kms_client = boto3.client('kms')
 
 def generate_data_key():
     response = kms_client.generate_data_key(
@@ -11,14 +11,6 @@ def generate_data_key():
 
     encrypted_data_key = response['CiphertextBlob']
     plaintext_data_key = response['Plaintext']
-
-    print(f"Encrypted data-key: {encrypted_data_key}")
-    print(f".......................................")
-    print(f"Encyrpted no-base64: {base64.b64decode(encrypted_data_key)}")
-    print(f".......................................")
-    print(f"Plaintext data-key: {plaintext_data_key}")
-    print(f".......................................")
-    print(f"Encyrpted no-base64: {base64.b64decode(plaintext_data_key)}")
 
     return encrypted_data_key, plaintext_data_key
 
