@@ -97,7 +97,7 @@ def send_data_files(pair_list, directory):
 
             files.append(('files', (file_hash, io.BytesIO(encrypted_data))))
 
-            key_filename = file_hash + '.key'
+            key_filename = 'key.' + file_hash
             files_keys.append(('files', (key_filename, io.BytesIO(encrypted_key))))
         except Exception as e:
             print(f"Error opening file {file_path} (hash {file_hash}): {e}")
