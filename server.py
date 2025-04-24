@@ -3,12 +3,13 @@ from os.path import basename
 from flask import Flask, request, jsonify
 import boto3
 from botocore.exceptions import ClientError
+from server_config import BUCKET_NAME
 
 app = Flask(__name__)
 
-# S3 configuration variables
-BUCKET_NAME = 'backuper-1'  # Replace with your S3 bucket name
 HASHES_PREFIX = 'hash_files/'
+KEY_PREFIX = 'key/'
+
 s3_client = boto3.client('s3')
 
 def get_s3_hashes():
@@ -106,6 +107,46 @@ def upload_data_files():
                     Fileobj=file,
                     Bucket=BUCKET_NAME,
                     Key=HASHES_PREFIX+filename
+                )
+                uploaded_files.append(filename)
+            except Exception as e:
+                errors.append({"filename": filename, "error": str(e)})
+        else:
+            errors.append({"filename": file.filename, "error": "Name is not a valid hash"})
+
+    response = {"uploaded_files": uploaded_files}
+    # If there are errors, include them in the response
+    if errors:
+        response["errors"] = errors
+        return jsonify(response), 207 if uploaded_files else 400
+
+    return jsonify(response), 200
+
+@app.route('/upload_key_files', methods=['POST'])
+def upload_key_files():
+    # Validate the request has files under the key 'files'
+    if 'files' not in request.files:
+        return jsonify(error="No file part in the request"), 400
+
+    files_keys = request.files.getlist('files')
+
+    # Check if files list is empty or first file has an empty filename
+    if not files_keys or files_keys[0].filename == "":
+        return jsonify(error="No selected files"), 400
+
+    uploaded_files = []
+    errors = []
+
+    for file in files_keys:
+        filename = file.filename.lower()
+        
+        if file and is_valid_hash(filename):
+            try:
+                    # Upload file to S3 using file-like object
+                s3_client.upload_fileobj(
+                    Fileobj=file,
+                    Bucket=BUCKET_NAME,
+                    Key=KEY_PREFIX+filename
                 )
                 uploaded_files.append(filename)
             except Exception as e:
