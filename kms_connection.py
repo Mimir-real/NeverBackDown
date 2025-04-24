@@ -1,11 +1,11 @@
 import boto3
-import base64
+from client_config import MASTER_KEY_ARN
 
-kms_client = boto3.client('kms')
+kms_client = boto3.client('kms', region_name='us-east-1')
 
 def generate_data_key():
     response = kms_client.generate_data_key(
-        KeyId='arn:aws:kms:us-east-1:367054200871:key/97db1d85-17f2-41da-ae70-1a1208666c30', #ARN master key
+        KeyId=MASTER_KEY_ARN, #ARN master key
         KeySpec='AES_256'
     )
 

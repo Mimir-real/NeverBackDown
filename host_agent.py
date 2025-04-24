@@ -8,8 +8,7 @@ from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
 from Crypto.Util.Padding import pad, unpad
 from kms_connection import generate_data_key, decrypt_data_key
-
-SERVER_URL = 'http://localhost:5000'
+from client_config import SERVER_URL
 
 FileInfo = namedtuple('FileInfo', ['path', 'hash'])
 
@@ -48,6 +47,7 @@ def check_missing_hashes(hashes, backup_name) -> list | None:
     Sends a list of hashes to the server and returns the missing ones.
 
     :param hashes: List of hash strings to check
+    :param backup_name: Name of the backup
     :returns A list of missing hashes
     """
     payload = {'backup': backup_name, 'hashes': hashes}
@@ -103,18 +103,19 @@ def send_data_files(pair_list, directory):
             print(f"Error opening file {file_path} (hash {file_hash}): {e}")
 
     try:
-        response = requests.post(SERVER_URL+'/upload_data_files', files=files)
-        response = requests.post(SERVER_URL+'/upload_key_files', files=files_keys)
+        response_files = requests.post(SERVER_URL+'/upload_data_files', files=files)
+        response_keys = requests.post(SERVER_URL+'/upload_key_files', files=files_keys)
         # Close all file objects after the request.
         for _, file_info in files:
             file_info[1].close()
 
         # Raise an exception if the status code indicates an error.
-        response.raise_for_status()
-        return response.json()
+        for response in (response_files, response_keys):
+            response.raise_for_status()
+        # return response.json()
     except requests.exceptions.RequestException as err:
         print(f"HTTP Request failed: {err}")
-        return None
+        # return None
 
 def send_meta_file(pairs: list, backup_name: str):
     file_obj = io.StringIO(json.dumps(pairs, indent=4))

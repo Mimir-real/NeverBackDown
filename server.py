@@ -3,11 +3,10 @@ from os.path import basename
 from flask import Flask, request, jsonify
 import boto3
 from botocore.exceptions import ClientError
+from server_config import BUCKET_NAME
 
 app = Flask(__name__)
 
-# S3 configuration variables
-BUCKET_NAME = 'backuper-2'  # Replace with your S3 bucket name
 HASHES_PREFIX = 'hash_files/'
 KEY_PREFIX = 'key/'
 
