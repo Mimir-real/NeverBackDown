@@ -1,6 +1,7 @@
 import re
+from http.client import responses
 from os.path import basename
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 import boto3
 from botocore.exceptions import ClientError
 from server_config import BUCKET_NAME
@@ -185,8 +186,29 @@ def list_backup_versions():
     return jsonify(version_infos)
 
 
+def get_file(prefix, filename):
+    if is_valid_hash(filename):
+        try:
+            response = s3_client.get_object(
+                Bucket=BUCKET_NAME, Key=prefix+filename
+            ).get('Body').read()
+            return send_file(response)
+        except Exception as e:
+            return jsonify(error=f"Error getting file '{filename}': {str(e)}"), 500
+    else:
+        return jsonify(error="Invalid filename"), 400
+
+
+@app.route('/get_data_file/<filename>', methods=['GET'])
+def get_data_file(filename):
+    return get_file(HASHES_PREFIX, filename)
+
+@app.route('/get_key_file/<filename>', methods=['GET'])
+def get_key_file(filename):
+    return get_file(KEY_PREFIX, filename)
+
+
 if __name__ == '__main__':
     # Run the Flask application in debug mode
     app.run(debug=True)
-
 

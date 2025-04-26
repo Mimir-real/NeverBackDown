@@ -1,8 +1,11 @@
 import os
 import io
 import json
+import shutil
+import tempfile
 import requests
 from collections import namedtuple
+from itertools import starmap
 from Crypto.Hash import SHA256
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
@@ -17,13 +20,13 @@ def hash_file(filepath):
     hash_tool = SHA256.new()
 
     with open(filepath, 'rb') as f:
-        
         while True:
             chunker = f.read(8_192_000)  # file read in 8MB chunks
             if not chunker:
                 break
             hash_tool.update(chunker)
     return hash_tool.hexdigest()
+
 
 def scan(directory):
     file_list = []
@@ -42,6 +45,7 @@ def scan(directory):
     return file_list
 
 
+# todo: obsługa wersji?
 def check_missing_hashes(hashes, backup_name) -> list | None:
     """
     Sends a list of hashes to the server and returns the missing ones.
@@ -52,7 +56,7 @@ def check_missing_hashes(hashes, backup_name) -> list | None:
     """
     payload = {'backup': backup_name, 'hashes': hashes}
 
-    response = requests.post(SERVER_URL+'/check_hashes', json=payload)
+    response = requests.post(SERVER_URL + '/check_hashes', json=payload)
     if response.status_code == 200:
         result = response.json()
         return result.get('missing_hashes', [])
@@ -62,7 +66,6 @@ def check_missing_hashes(hashes, backup_name) -> list | None:
 
 
 def encrypt_data(data, output_filename):
-   
     print("Encrypting data into '%s'.", output_filename)
 
     encrypted_key, plaintext_key = generate_data_key()
@@ -84,6 +87,33 @@ def encrypt_data(data, output_filename):
     return iv + ciphertext, encrypted_key
 
 
+def decrypt_data(encrypted_blob: bytes,
+                 encrypted_key: bytes,
+                 output_filename: str) -> bytes:
+    print(f"Decrypting data...")
+
+    plaintext_key = decrypt_data_key(encrypted_key)
+
+    try:
+        # Split out IV and ciphertext
+        iv = encrypted_blob[:AES.block_size]
+        ciphertext = encrypted_blob[AES.block_size:]
+
+        cipher = AES.new(plaintext_key, AES.MODE_CBC, iv)
+        padded_plain = cipher.decrypt(ciphertext)
+
+        plaintext = unpad(padded_plain, AES.block_size)
+
+        with open(output_filename, "wb") as f:
+            f.write(plaintext)
+        print(f"Decrypted data written to '{output_filename}'.")
+
+        return plaintext
+
+    finally:
+        del plaintext_key
+
+
 def send_data_files(pair_list, directory):
     files = []
     files_keys = []
@@ -103,8 +133,8 @@ def send_data_files(pair_list, directory):
             print(f"Error opening file {file_path} (hash {file_hash}): {e}")
 
     try:
-        response_files = requests.post(SERVER_URL+'/upload_data_files', files=files)
-        response_keys = requests.post(SERVER_URL+'/upload_key_files', files=files_keys)
+        response_files = requests.post(SERVER_URL + '/upload_data_files', files=files)
+        response_keys = requests.post(SERVER_URL + '/upload_key_files', files=files_keys)
         # Close all file objects after the request.
         for _, file_info in files:
             file_info[1].close()
@@ -117,18 +147,51 @@ def send_data_files(pair_list, directory):
         print(f"HTTP Request failed: {err}")
         # return None
 
+
 def send_meta_file(pairs: list, backup_name: str):
     file_obj = io.StringIO(json.dumps(pairs, indent=4))
     files = {'file': (backup_name, file_obj)}
-    response = requests.post(SERVER_URL+'/upload_meta_file', files=files)
+    response = requests.post(SERVER_URL + '/upload_meta_file', files=files)
     return response.status_code, response.json()
 
 
+def get_backup_metadata(backup_name: str, version: str) -> dict:
+    response = requests.get(SERVER_URL + '/get_meta_file', params={'backup': backup_name, 'version': version})
+    # should decrypt there if there is encryption
+    return json.loads(response.content.decode())
+
+
 def get_backup_versions(backup_name: str):
-    response = requests.post(SERVER_URL+'/list_backup_versions', json={'backup': backup_name})
+    response = requests.post(SERVER_URL + '/list_backup_versions', json={'backup': backup_name})
     if response.status_code != 200:
         raise ValueError('bad response')
     return response.json()
+
+
+def get_and_restore(directory: str, backup_name: str, version: str):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        restoring_error = False
+        for file_info in starmap(FileInfo, get_backup_metadata(backup_name, version)):
+            file_path = os.path.join(tmpdir, file_info.path)
+            resp_file = requests.get(SERVER_URL + '/get_data_file/' + file_info.hash)
+            if resp_file.status_code != 200:
+                print('An error occurred while downloading file')
+                restoring_error = True
+            resp_key = requests.get(SERVER_URL + '/get_data_key/' + file_info.hash)
+            if resp_key.status_code != 200:
+                print('An error occurred while downloading key')
+                restoring_error = True
+            decrypt_data(resp_file.content, resp_key.content, file_path)
+        if restoring_error:
+            target_path = f"{directory}.incomplete"
+            # to make sure that directory didn't exist
+            while os.path.exists(target_path):
+                target_path = f"{target_path}.incomplete"
+            print(f'An error occurred while restoring backup, restored data will be written to {target_path}')
+        else:
+            target_path = directory
+            shutil.rmtree(directory, ignore_errors=True)
+        shutil.copytree(tmpdir, target_path)
 
 
 def main():
@@ -137,7 +200,7 @@ def main():
     if not os.path.isdir(dir_to_back):
         print('Directory does not exist')
         return
-    
+
     print(f'Scanning {dir_to_back}... ')
     path_hash_pairs = scan(dir_to_back)
     # print('Path-hash pairs:', path_hash_pairs)

@@ -1,7 +1,7 @@
 import boto3
 from client_config import MASTER_KEY_ARN
 
-kms_client = boto3.client('kms', region_name='us-east-1')
+kms_client = boto3.client('kms')
 
 def generate_data_key():
     response = kms_client.generate_data_key(
