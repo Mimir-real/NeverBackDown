@@ -168,7 +168,7 @@ def get_backup_versions(backup_name: str):
     return response.json()
 
 
-def get_and_restore(directory: str, backup_name: str, version: str):
+def get_and_restore(directory: str, backup_name: str, version: str) -> bool:
     with tempfile.TemporaryDirectory() as tmpdir:
         restoring_error = False
         for file_info in starmap(FileInfo, get_backup_metadata(backup_name, version)):
@@ -192,34 +192,49 @@ def get_and_restore(directory: str, backup_name: str, version: str):
             target_path = directory
             shutil.rmtree(directory, ignore_errors=True)
         shutil.copytree(tmpdir, target_path)
+        return not restoring_error
 
 
 def main():
-    dir_to_back = input("Directory to backup: ").strip()
-    backup_name = input('Backup name: ').strip()
-    if not os.path.isdir(dir_to_back):
-        print('Directory does not exist')
-        return
+    option = input("What do you want to do?").lower()
+    if 'backup'.startswith(option):
+        dir_to_back = input("Directory to backup: ").strip()
+        backup_name = input('Backup name: ').strip()
+        if not os.path.isdir(dir_to_back):
+            print('Directory does not exist')
+            return
 
-    print(f'Scanning {dir_to_back}... ')
-    path_hash_pairs = scan(dir_to_back)
-    # print('Path-hash pairs:', path_hash_pairs)
-    hash_list = [pair.hash for pair in path_hash_pairs]
-    missing_hashes = check_missing_hashes(hash_list, backup_name)
-    print('Missing hashes:', missing_hashes)
-    if missing_hashes:
-        to_upload = [pair for pair in path_hash_pairs if pair.hash in missing_hashes]
-        print(send_data_files(to_upload, dir_to_back))
+        print(f'Scanning {dir_to_back}... ')
+        path_hash_pairs = scan(dir_to_back)
+        # print('Path-hash pairs:', path_hash_pairs)
+        hash_list = [pair.hash for pair in path_hash_pairs]
+        missing_hashes = check_missing_hashes(hash_list, backup_name)
+        print('Missing hashes:', missing_hashes)
+        if missing_hashes:
+            to_upload = [pair for pair in path_hash_pairs if pair.hash in missing_hashes]
+            print(send_data_files(to_upload, dir_to_back))
+        else:
+            print('All data files are in the server, nothing to do')
+
+        print('Sending backup meta file')
+        code, message = send_meta_file(path_hash_pairs, backup_name)
+        if code == 200:
+            print('Backup created')
+        else:
+            print('Error creating backup:', message)
+    elif 'restore'.startswith(option):
+        dir_to_restore = input('Directory to restore: ').strip()
+        backup_name = input('Backup name: ').strip()
+        print('Select version that you want to restore:')
+        available_versions: list = get_backup_versions(backup_name)
+        for i, version_info in enumerate(available_versions):
+            print(str(i)+')', * version_info, sep='\t')
+        version_no = int(input('Select number: '))
+
+        if get_and_restore(dir_to_restore, backup_name, available_versions[version_no].get(0)):
+            print('Backup restored properly')
     else:
-        print('All data files are in the server, nothing to do')
-
-    print('Sending backup meta file')
-    code, message = send_meta_file(path_hash_pairs, backup_name)
-    if code == 200:
-        print('Backup created')
-    else:
-        print('Error creating backup:', message)
-
+        print('Invalid option')
 
 if __name__ == "__main__":
     main()
