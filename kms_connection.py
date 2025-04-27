@@ -15,7 +15,11 @@ def generate_data_key():
     return encrypted_data_key, plaintext_data_key
 
 def decrypt_data_key(encrypted_data_key):
-    response = kms_client.decrypt(CiphertextBlob = encrypted_data_key)
+    response = kms_client.decrypt(
+        KeyId=MASTER_KEY_ARN,
+        CiphertextBlob=encrypted_data_key
+    )
     plaintext_data_key = response['Plaintext']
 
     return plaintext_data_key
+
