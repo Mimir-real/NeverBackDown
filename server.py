@@ -62,28 +62,44 @@ def check_hashes():
 def upload_meta_file():
     if 'file' not in request.files:
         return jsonify(error="No file part in the request"), 400
+    if 'key' not in request.files:
+        return jsonify(error="No key file part in the request"), 400
 
     file = request.files['file']
+    key = request.files['key']
 
-    # Check if a file was actually selected
+    # Check if files was actually selected
     if file.filename == "":
         return jsonify(error="No file selected"), 400
+    if key.filename == "":
+        return jsonify(error="No key file selected"), 400
 
     # Sanitize the filename
-    filename = basename(file.filename) + '.json'
+    backup_name = basename(file.filename)
+    filename = backup_name + '.json'
+
 
     try:
         # Upload file directly to S3
-        s3_client.upload_fileobj(
-            Fileobj=file,
+        response = s3_client.put_object(
+            Body=file,
             Bucket=BUCKET_NAME,
             Key=filename
         )
-        return jsonify(message=f"File '{filename}' uploaded successfully to S3."), 200
+
+        metadata_file_version = response.get('VersionId')
+        key_filename = backup_name + '_' + metadata_file_version + '.key'
+
+        s3_client.upload_fileobj(
+            Fileobj=key,
+            Bucket=BUCKET_NAME,
+            Key=key_filename
+        )
+        return jsonify(message=f"Backup '{backup_name}' meta file and key uploaded successfully to S3."), 200
 
     except Exception as e:
         # Return an error response if S3 upload fails
-        return jsonify(error=f"Error uploading file '{filename}': {str(e)}"), 500
+        return jsonify(error=f"Error uploading backup '{backup_name}' metadata: {str(e)}"), 500
 
 @app.route('/upload_data_files', methods=['POST'])
 def upload_data_files():
@@ -218,6 +234,19 @@ def get_meta_file():
         return send_file(BytesIO(file_data), mimetype='application/octet-stream')
     except Exception as e:
         return jsonify(error=f"Error getting file '{backup_file}': {str(e)}"), 500
+
+@app.route('/get_meta_key', methods=['GET'])
+def get_meta_key():
+    backup_name = request.args.get('backup')
+    version = request.args.get('version')
+    key_filename = backup_name + '_' + version + '.key'
+    try:
+        file_data = s3_client.get_object(
+            Bucket=BUCKET_NAME, Key=key_filename
+        ).get('Body').read()
+        return send_file(BytesIO(file_data), mimetype='application/octet-stream')
+    except Exception as e:
+        return jsonify(error=f"Error getting file '{key_filename}': {str(e)}"), 500
 
 
 if __name__ == '__main__':

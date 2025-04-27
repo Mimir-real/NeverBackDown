@@ -85,7 +85,7 @@ def encrypt_data(data):
 
 def decrypt_data(encrypted_blob: bytes,
                  encrypted_key: bytes,
-                 output_filename: str):
+                 output_filename: str = None) -> bytes | None:
     print(f"Decrypting data...")
 
     plaintext_key = decrypt_data_key(encrypted_key)
@@ -100,9 +100,12 @@ def decrypt_data(encrypted_blob: bytes,
 
         plaintext = unpad(padded_plain, AES.block_size)
 
-        with open(output_filename, "wb") as f:
-            f.write(plaintext)
-        print(f"Decrypted data written to '{output_filename}'.")
+        if output_filename is not None:
+            with open(output_filename, "wb") as f:
+                f.write(plaintext)
+            print(f"Decrypted data written to '{output_filename}'.")
+        else:
+            return plaintext
 
     finally:
         del plaintext_key
@@ -145,18 +148,28 @@ def send_data_files(pair_list, directory):
 
 
 def send_meta_file(pairs: list, backup_name: str):
-    file_obj = io.StringIO(json.dumps(pairs, indent=4))
-    files = {'file': (backup_name, file_obj)}
+    raw_json_data = json.dumps(pairs, indent=4).encode()
+    encrypted_data, encrypted_key = encrypt_data(raw_json_data)
+    file_obj = io.BytesIO(encrypted_data)
+    key_file_obj = io.BytesIO(encrypted_key)
+    files = {'file': (backup_name, file_obj), 'key': (backup_name, key_file_obj)}
     response = requests.post(SERVER_URL + '/upload_meta_file', files=files)
+
     return response.status_code, response.json()
 
 
 def get_backup_metadata(backup_name: str, version: str) -> dict:
-    response = requests.get(SERVER_URL + '/get_meta_file', params={'backup': backup_name, 'version': version})
-    response.raise_for_status()
+    response_file = requests.get(SERVER_URL + '/get_meta_file', params={'backup': backup_name, 'version': version})
+    response_file.raise_for_status()
+    response_key = requests.get(SERVER_URL + '/get_meta_key', params={'backup': backup_name, 'version': version})
+    response_key.raise_for_status()
+
     # should decrypt there if there is encryption
-    response_content = response.content.decode()
-    return json.loads(response_content)
+    encrypted_metadata = response_file.content
+    encrypted_key = response_key.content
+    decrypted_metadata = decrypt_data(encrypted_metadata, encrypted_key)
+
+    return json.loads(decrypted_metadata.decode())
 
 
 def get_backup_versions(backup_name: str):
