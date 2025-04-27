@@ -1,5 +1,6 @@
 import re
 from http.client import responses
+from io import BytesIO
 from os.path import basename
 from flask import Flask, request, jsonify, send_file
 import boto3
@@ -189,10 +190,10 @@ def list_backup_versions():
 def get_file(prefix, filename):
     if is_valid_hash(filename):
         try:
-            response = s3_client.get_object(
+            file_data = s3_client.get_object(
                 Bucket=BUCKET_NAME, Key=prefix+filename
             ).get('Body').read()
-            return send_file(response)
+            return send_file(BytesIO(file_data), mimetype='application/octet-stream')
         except Exception as e:
             return jsonify(error=f"Error getting file '{filename}': {str(e)}"), 500
     else:
@@ -206,6 +207,18 @@ def get_data_file(filename):
 @app.route('/get_key_file/<filename>', methods=['GET'])
 def get_key_file(filename):
     return get_file(KEY_PREFIX, filename)
+
+@app.route('/get_meta_file', methods=['GET'])
+def get_meta_file():
+    backup_file = request.args.get('backup') + '.json'
+    version = request.args.get('version')
+    try:
+        file_data = s3_client.get_object(
+            Bucket=BUCKET_NAME, Key=backup_file, VersionId=version
+        ).get('Body').read()
+        return send_file(BytesIO(file_data), mimetype='application/octet-stream')
+    except Exception as e:
+        return jsonify(error=f"Error getting file '{backup_file}': {str(e)}"), 500
 
 
 if __name__ == '__main__':

@@ -65,9 +65,7 @@ def check_missing_hashes(hashes, backup_name) -> list | None:
         exit()
 
 
-def encrypt_data(data, output_filename):
-    print("Encrypting data into '%s'.", output_filename)
-
+def encrypt_data(data):
     encrypted_key, plaintext_key = generate_data_key()
 
     # Create a new AES cipher object in CBC mode with a random IV
@@ -81,8 +79,6 @@ def encrypt_data(data, output_filename):
     ciphertext = cipher.encrypt(padded_data)
 
     del plaintext_key
-
-    print("Encryption completed successfully.")
 
     return iv + ciphertext, encrypted_key
 
@@ -123,7 +119,9 @@ def send_data_files(pair_list, directory):
             with open(full_path, 'rb') as f:
                 plaintext = f.read()
 
-            encrypted_data, encrypted_key = encrypt_data(plaintext, file_path)
+            print(f"Encrypting file {file_path}.")
+            encrypted_data, encrypted_key = encrypt_data(plaintext)
+            print("Encryption completed successfully.")
 
             files.append(('files', (file_hash, io.BytesIO(encrypted_data))))
 
@@ -157,8 +155,11 @@ def send_meta_file(pairs: list, backup_name: str):
 
 def get_backup_metadata(backup_name: str, version: str) -> dict:
     response = requests.get(SERVER_URL + '/get_meta_file', params={'backup': backup_name, 'version': version})
+    response.raise_for_status()
     # should decrypt there if there is encryption
-    return json.loads(response.content.decode())
+    response_content = response.content.decode()
+    print('raw response content:', response_content)
+    return json.loads(response_content)
 
 
 def get_backup_versions(backup_name: str):
@@ -171,16 +172,23 @@ def get_backup_versions(backup_name: str):
 def get_and_restore(directory: str, backup_name: str, version: str) -> bool:
     with tempfile.TemporaryDirectory() as tmpdir:
         restoring_error = False
-        for file_info in starmap(FileInfo, get_backup_metadata(backup_name, version)):
+        backup_meta = get_backup_metadata(backup_name, version)
+        print('backup_meta:', backup_meta)
+        for raw_file_info in backup_meta:
+            print('RAW FILE INFO:', raw_file_info)
+            file_info = FileInfo(*raw_file_info)
             file_path = os.path.join(tmpdir, file_info.path)
             resp_file = requests.get(SERVER_URL + '/get_data_file/' + file_info.hash)
             if resp_file.status_code != 200:
                 print('An error occurred while downloading file')
                 restoring_error = True
-            resp_key = requests.get(SERVER_URL + '/get_data_key/' + file_info.hash)
+                continue
+            resp_key = requests.get(SERVER_URL + '/get_key_file/' + file_info.hash)
+            resp_key.raise_for_status()
             if resp_key.status_code != 200:
                 print('An error occurred while downloading key')
                 restoring_error = True
+                continue
             decrypt_data(resp_file.content, resp_key.content, file_path)
         if restoring_error:
             target_path = f"{directory}.incomplete"
@@ -196,7 +204,7 @@ def get_and_restore(directory: str, backup_name: str, version: str) -> bool:
 
 
 def main():
-    option = input("What do you want to do?").lower()
+    option = input("What do you want to do? (backup or restore): ").lower()
     if 'backup'.startswith(option):
         dir_to_back = input("Directory to backup: ").strip()
         backup_name = input('Backup name: ').strip()
@@ -212,7 +220,8 @@ def main():
         print('Missing hashes:', missing_hashes)
         if missing_hashes:
             to_upload = [pair for pair in path_hash_pairs if pair.hash in missing_hashes]
-            print(send_data_files(to_upload, dir_to_back))
+            send_data_files(to_upload, dir_to_back)
+            print('Missing files sent to server')
         else:
             print('All data files are in the server, nothing to do')
 
@@ -227,11 +236,14 @@ def main():
         backup_name = input('Backup name: ').strip()
         print('Select version that you want to restore:')
         available_versions: list = get_backup_versions(backup_name)
+        print('DEBUG AVAILABLE VERSIONS:', available_versions)
         for i, version_info in enumerate(available_versions):
-            print(str(i)+')', * version_info, sep='\t')
+            version = version_info.get('version_id')
+            last_modified = version_info.get('last_modified')
+            print(str(i)+')', version, last_modified, sep='\t')
         version_no = int(input('Select number: '))
 
-        if get_and_restore(dir_to_restore, backup_name, available_versions[version_no].get(0)):
+        if get_and_restore(dir_to_restore, backup_name, available_versions[version_no]['version_id']):
             print('Backup restored properly')
     else:
         print('Invalid option')
