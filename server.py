@@ -50,7 +50,7 @@ def check_hashes():
         s3_hashes = get_s3_hashes()
     except ClientError as e:
         print("Error retrieving S3 objects:", e)
-        return jsonify({"error": "Couldn't receive S3 objects"})
+        return jsonify({"error": "Couldn't receive S3 objects"}), 500
 
     # Compute the difference; only include those hashes from the client that are not in S3
     missing_hashes = client_hashes - s3_hashes
@@ -180,7 +180,6 @@ def list_backup_versions():
     version_infos = []
     for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=backup_file):
         for version in page.get('Versions', []):
-            print(version)
             if version['Key'] == backup_file:
                 version_infos.append({'version_id': version['VersionId'],
                                       'last_modified': version['LastModified']})

@@ -15,6 +15,8 @@ from client_config import SERVER_URL
 
 FileInfo = namedtuple('FileInfo', ['path', 'hash'])
 
+BAD_FILE_CHARS = '/\\\0:'
+
 
 def hash_file(filepath):
     hash_tool = SHA256.new()
@@ -45,7 +47,6 @@ def scan(directory):
     return file_list
 
 
-# todo: obsługa wersji?
 def check_missing_hashes(hashes, backup_name) -> list | None:
     """
     Sends a list of hashes to the server and returns the missing ones.
@@ -158,7 +159,6 @@ def get_backup_metadata(backup_name: str, version: str) -> dict:
     response.raise_for_status()
     # should decrypt there if there is encryption
     response_content = response.content.decode()
-    print('raw response content:', response_content)
     return json.loads(response_content)
 
 
@@ -173,7 +173,6 @@ def get_and_restore(directory: str, backup_name: str, version: str) -> bool:
     with tempfile.TemporaryDirectory() as tmpdir:
         restoring_error = False
         backup_meta = get_backup_metadata(backup_name, version)
-        print('backup_meta:', backup_meta)
         for raw_file_info in backup_meta:
             print('RAW FILE INFO:', raw_file_info)
             file_info = FileInfo(*raw_file_info)
@@ -203,18 +202,31 @@ def get_and_restore(directory: str, backup_name: str, version: str) -> bool:
         return not restoring_error
 
 
+def is_valid_filename(name: str) -> bool:
+    if len(name) < 1:
+        return False
+    for char in BAD_FILE_CHARS:
+        if char in name:
+            return False
+    return True
+
+
 def main():
     option = input("What do you want to do? (backup or restore): ").lower()
     if 'backup'.startswith(option):
-        dir_to_back = input("Directory to backup: ").strip()
-        backup_name = input('Backup name: ').strip()
-        if not os.path.isdir(dir_to_back):
-            print('Directory does not exist')
-            return
+        while not os.path.isdir(
+                dir_to_back := input("Directory to backup: ").strip()
+        ):
+            print('Directory does not exist, provide a valid one')
+
+        while not is_valid_filename(
+                backup_name := input('Backup name: ').strip()
+        ):
+            print(f'Invalid backup name: should be at least 1 character long '
+                  f'and contain no characters as "{BAD_FILE_CHARS}"')
 
         print(f'Scanning {dir_to_back}... ')
         path_hash_pairs = scan(dir_to_back)
-        # print('Path-hash pairs:', path_hash_pairs)
         hash_list = [pair.hash for pair in path_hash_pairs]
         missing_hashes = check_missing_hashes(hash_list, backup_name)
         print('Missing hashes:', missing_hashes)
@@ -236,7 +248,6 @@ def main():
         backup_name = input('Backup name: ').strip()
         print('Select version that you want to restore:')
         available_versions: list = get_backup_versions(backup_name)
-        print('DEBUG AVAILABLE VERSIONS:', available_versions)
         for i, version_info in enumerate(available_versions):
             version = version_info.get('version_id')
             last_modified = version_info.get('last_modified')
