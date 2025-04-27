@@ -5,7 +5,6 @@ import shutil
 import tempfile
 import requests
 from collections import namedtuple
-from itertools import starmap
 from Crypto.Hash import SHA256
 from Crypto.Cipher import AES
 from Crypto.Random import get_random_bytes
@@ -86,7 +85,7 @@ def encrypt_data(data):
 
 def decrypt_data(encrypted_blob: bytes,
                  encrypted_key: bytes,
-                 output_filename: str) -> bytes:
+                 output_filename: str):
     print(f"Decrypting data...")
 
     plaintext_key = decrypt_data_key(encrypted_key)
@@ -104,8 +103,6 @@ def decrypt_data(encrypted_blob: bytes,
         with open(output_filename, "wb") as f:
             f.write(plaintext)
         print(f"Decrypted data written to '{output_filename}'.")
-
-        return plaintext
 
     finally:
         del plaintext_key
@@ -174,7 +171,6 @@ def get_and_restore(directory: str, backup_name: str, version: str) -> bool:
         restoring_error = False
         backup_meta = get_backup_metadata(backup_name, version)
         for raw_file_info in backup_meta:
-            print('RAW FILE INFO:', raw_file_info)
             file_info = FileInfo(*raw_file_info)
             file_path = os.path.join(tmpdir, file_info.path)
             resp_file = requests.get(SERVER_URL + '/get_data_file/' + file_info.hash)
@@ -252,9 +248,21 @@ def main():
             version = version_info.get('version_id')
             last_modified = version_info.get('last_modified')
             print(str(i)+')', version, last_modified, sep='\t')
-        version_no = int(input('Select number: '))
 
-        if get_and_restore(dir_to_restore, backup_name, available_versions[version_no]['version_id']):
+        while True:
+            try:
+                version_no = int(input('Select number: '))
+                if version_no < 0:
+                    raise ValueError
+                selected_version = available_versions[version_no]['version_id']
+                break
+            except (ValueError, KeyError, IndexError):
+                print('Invalid number')
+            except:
+                print('Invalid number')
+                exit()
+
+        if get_and_restore(dir_to_restore, backup_name, selected_version):
             print('Backup restored properly')
     else:
         print('Invalid option')
