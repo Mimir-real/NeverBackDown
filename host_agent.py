@@ -186,6 +186,10 @@ def get_and_restore(directory: str, backup_name: str, version: str) -> bool:
         for raw_file_info in backup_meta:
             file_info = FileInfo(*raw_file_info)
             file_path = os.path.join(tmpdir, file_info.path)
+            # make sure that directory in which file should be written exists
+            dir_path = os.path.dirname(file_path)
+            os.makedirs(dir_path, exist_ok=True)
+
             resp_file = requests.get(SERVER_URL + '/get_data_file/' + file_info.hash)
             if resp_file.status_code != 200:
                 print('An error occurred while downloading file')
